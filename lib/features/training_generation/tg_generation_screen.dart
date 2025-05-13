@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:swim/features/training/models/training_detail_data.dart';
 import 'package:swim/features/training_generation/tg_generation_detail_screen.dart';
+import 'package:swim/features/training/models/training_session.dart';
+import 'package:swim/repositories/training_repository.dart'; // 수정된 경로
 import 'tg_beep_settings_screen.dart';
 import 'tg_timer_screen.dart';
 
@@ -17,6 +20,8 @@ class _TGGenerationScreenState extends State<TGGenerationScreen> {
   int _numPeople = 1;
   int _totalDist = 0;
   int _totalTime = 0;
+  final TrainingRepository _trainingRepository = TrainingRepository(); // 변수 추가
+  bool _isLoading = false;
 
   @override
   void initState() {
@@ -154,31 +159,87 @@ class _TGGenerationScreenState extends State<TGGenerationScreen> {
     );
   }
 
-  void _onStart() {
+  void _onStart() async {
     if (_trainings.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("훈련을 하나 이상 추가하세요.")),
       );
       return;
     }
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => TGTimerScreen(
-          trainingList: _trainings,  // ✅ 훈련 목록 전달
-          beepSound: _selectedSound, // ✅ 선택한 사운드 전달
-          numPeople: _numPeople,     // ✅ 선택한 인원 전달
-        ),
-      ),
-    );
-  }
 
+    setState(() {
+      _isLoading = true;
+    });
 
-  String _formatCycle(int seconds) {
-    if (seconds % 60 == 0) {
-      return "${seconds ~/ 60}분";
-    } else {
-      return "${seconds}s";
+    // BuildContext를 미리 저장
+    final currentContext = context;
+
+    try {
+      // 로딩 표시
+      if (mounted) {
+        showDialog(
+          context: currentContext,
+          barrierDismissible: false,
+          builder: (dialogContext) => const Center(
+            child: CircularProgressIndicator(),
+          ),
+        );
+      }
+
+      // Firebase 사용자 확인
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('로그인이 필요합니다');
+      }
+
+      // 로컬 세션 생성
+      final localSession = TrainingSession(
+        id: '',
+        userId: user.uid,
+        trainings: _trainings,
+        beepSound: _selectedSound,
+        numPeople: _numPeople,
+        createdAt: DateTime.now(),
+        totalTime: _totalTime,
+        totalDistance: _totalDist,
+        title: '훈련 ${DateTime.now().toString().substring(0, 16)}',
+      );
+
+      // Firebase에 저장
+      final sessionId = await _trainingRepository.saveTrainingSession(localSession);
+
+      // 로딩 다이얼로그 닫기
+      if (mounted) {
+        Navigator.pop(currentContext);
+      }
+
+      // 타이머 화면으로 이동
+      if (mounted) {
+        Navigator.push(
+          currentContext,
+          MaterialPageRoute(
+            builder: (_) => TGTimerScreen(
+              sessionId: sessionId,
+              fallbackData: localSession,
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      // 로딩 다이얼로그 닫기
+      if (mounted) {
+        Navigator.pop(currentContext);
+
+        ScaffoldMessenger.of(currentContext).showSnackBar(
+          SnackBar(content: Text('저장 실패: $e')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -340,12 +401,14 @@ class _TGGenerationScreenState extends State<TGGenerationScreen> {
                         ),
                       ),
                       ElevatedButton(
-                        onPressed: _onStart,
+                        onPressed: _isLoading ? null : _onStart,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: Colors.black,
                           padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 14),
                         ),
-                        child: const Text(
+                        child: _isLoading
+                            ? const CircularProgressIndicator(color: Colors.pink)
+                            : const Text(
                           "Start",
                           style: TextStyle(color: Colors.pink, fontSize: 18),
                         ),
@@ -400,4 +463,6 @@ class _TGGenerationScreenState extends State<TGGenerationScreen> {
       ),
     );
   }
+
+  _formatCycle(int cycle) {}
 }

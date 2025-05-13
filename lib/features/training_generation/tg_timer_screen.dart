@@ -1,20 +1,22 @@
+// lib/features/training_generation/tg_timer_screen.dart
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
-import 'package:swim/features/training/models/training_detail_data.dart';
+import 'package:swim/features/training/models/training_detail_data.dart'; // 이것만 사용
+import 'package:swim/features/training/models/training_session.dart';
+import 'package:swim/repositories/training_repository.dart';
 import 'tg_timer_controller.dart';
 
 class TGTimerScreen extends StatefulWidget {
-  final List<TrainingDetailData> trainingList;
-  final String beepSound;
-  final int numPeople;
+  final String sessionId;
+  final TrainingSession? fallbackData;
 
   const TGTimerScreen({
     super.key,
-    required this.trainingList,
-    required this.beepSound,
-    required this.numPeople,
+    required this.sessionId,
+    this.fallbackData,
   });
 
   @override
@@ -25,18 +27,64 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
   late TGTimerController _timerController;
   late VideoPlayerController _videoController;
   Timer? _uiUpdateTimer;
+  Timer? _progressUpdateTimer;
   bool _videoInitialized = false;
   bool _isVideoError = false;
+
+  final TrainingRepository _trainingRepository = TrainingRepository();
+  TrainingSession? _trainingSession;
+  bool _isLoading = true;
+  bool _isOfflineMode = false;
 
   @override
   void initState() {
     super.initState();
+    _loadTrainingSession();
+  }
+
+  Future<void> _loadTrainingSession() async {
+    try {
+      // Firebase에서 데이터 로드 시도
+      final session = await _trainingRepository.getTrainingSession(widget.sessionId);
+
+      if (session == null && widget.fallbackData != null) {
+        // 오프라인 모드 (fallback 데이터 사용)
+        setState(() {
+          _trainingSession = widget.fallbackData;
+          _isOfflineMode = true;
+          _isLoading = false;
+        });
+      } else if (session != null) {
+        setState(() {
+          _trainingSession = session;
+          _isLoading = false;
+        });
+      } else {
+        throw Exception('훈련 데이터를 찾을 수 없습니다');
+      }
+
+      // 컴포넌트 초기화
+      _initializeComponents();
+
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('데이터 로드 실패: $e')),
+      );
+      Navigator.pop(context);
+    }
+  }
+
+  void _initializeComponents() {
+    if (_trainingSession == null) return;
 
     // 타이머 컨트롤러 초기화
     _timerController = TGTimerController(
-      trainingList: widget.trainingList,
-      beepSound: widget.beepSound,
-      numPeople: widget.numPeople,
+      trainingList: _trainingSession!.trainings,
+      beepSound: _trainingSession!.beepSound,
+      numPeople: _trainingSession!.numPeople,
       onUpdate: () {
         if (mounted) setState(() {});
       },
@@ -50,6 +98,11 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
     _uiUpdateTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (mounted) setState(() {});
     });
+
+    // 진행 상태 업데이트 타이머 (10초마다 Firebase 업데이트)
+    _progressUpdateTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      _updateProgressToFirebase();
+    });
   }
 
   Future<void> _initVideoPlayer() async {
@@ -58,8 +111,7 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
         print("비디오 초기화 시작");
       }
 
-      // 비디오 경로가 정확한지 확인
-      const videoPath = 'assets/videos/swim.mp4'; // 이 경로가 정확한지 확인
+      const videoPath = 'assets/videos/swim.mp4';
       _videoController = VideoPlayerController.asset(videoPath);
 
       await _videoController.initialize().then((_) {
@@ -68,7 +120,6 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
         }
 
         _videoController.setLooping(true);
-        // 볼륨 설정
         _videoController.setVolume(1.0);
 
         if (mounted) {
@@ -95,7 +146,7 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
 
   // 타이머 이벤트 처리
   Future<void> _handleTimerEvent(String action) async {
-    if (!mounted) return;
+    if (!mounted || _trainingSession == null) return;
 
     try {
       switch (action) {
@@ -114,17 +165,80 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
           break;
 
         case "complete":
-        // 훈련 완료 시 비디오 초기화 및 정지
+        // 훈련 완료 시 Firebase 업데이트
+          await _completeTraining();
+          break;
+
+        case "pause":
+        // 일시정지 시 비디오도 정지
+          if (_videoInitialized) _videoController.pause();
+          break;
+
+        case "resume":
+        // 재개 시 비디오도 재생 (쉬는 시간이 아닌 경우)
+          if (!_timerController.isResting && _videoInitialized) {
+            _videoController.play();
+          }
+          break;
+
+        case "reset":
+        // 초기화
           if (_videoInitialized) {
             _videoController.pause();
             _videoController.seekTo(Duration.zero);
           }
-          _showCompletionMessage();
           break;
       }
     } catch (e) {
       if (kDebugMode) {
         print("이벤트 처리 에러: $e");
+      }
+    }
+  }
+
+  // 훈련 완료 처리
+  Future<void> _completeTraining() async {
+    // Firebase에 완료 상태 업데이트
+    if (!_isOfflineMode) {
+      try {
+        await _trainingRepository.updateTrainingComplete(widget.sessionId);
+        if (kDebugMode) {
+          print("Firebase에 훈련 완료 상태 업데이트 성공");
+        }
+      } catch (e) {
+        if (kDebugMode) {
+          print("Firebase 업데이트 실패: $e");
+        }
+      }
+    }
+
+    // 비디오 정지
+    if (_videoInitialized) {
+      _videoController.pause();
+      _videoController.seekTo(Duration.zero);
+    }
+
+    // 완료 메시지 표시
+    _showCompletionMessage();
+  }
+
+  // 진행 상태를 Firebase에 업데이트
+  Future<void> _updateProgressToFirebase() async {
+    if (_isOfflineMode || !_timerController.isRunning) return;
+
+    try {
+      await _trainingRepository.updateTrainingProgress(
+        widget.sessionId,
+        _timerController.currentTrainingIndex,
+        _timerController.currentCycleIndex,
+        _timerController.totalProgress,
+      );
+      if (kDebugMode) {
+        print("진행 상태 업데이트: ${(_timerController.totalProgress * 100).toInt()}%");
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print("진행 상태 업데이트 실패: $e");
       }
     }
   }
@@ -150,12 +264,13 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
     _timerController.dispose();
     _videoController.dispose();
     _uiUpdateTimer?.cancel();
+    _progressUpdateTimer?.cancel();
     super.dispose();
   }
 
   // 타이머 토글 (시작/일시정지/재개)
   Future<void> _handleToggle() async {
-    if (!mounted || !_videoInitialized) return;
+    if (!mounted) return;
 
     try {
       if (_timerController.isCompleted) {
@@ -163,24 +278,16 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
         return;
       }
 
-      // 타이머가 시작되지 않은 상태에서 시작 버튼을 누른 경우
       if (!_timerController.isRunning) {
         _timerController.startTraining();
-        // 비디오 재생은 이벤트 핸들러에서 처리 (쉬는 시간이 아닐 때만)
-      }
-      // 타이머가 일시정지된 상태에서 계속 버튼을 누른 경우
-      else if (_timerController.isPaused) {
-        _timerController.toggleTimer(); // 타이머 재개
-
-        // 쉬는 시간이 아닐 때만 영상 재생
-        if (!_timerController.isResting) {
+      } else if (_timerController.isPaused) {
+        _timerController.toggleTimer();
+        if (!_timerController.isResting && _videoInitialized) {
           _videoController.play();
         }
-      }
-      // 타이머가 실행 중인 상태에서 정지 버튼을 누른 경우
-      else {
-        _timerController.toggleTimer(); // 타이머 일시정지
-        _videoController.pause();
+      } else {
+        _timerController.toggleTimer();
+        if (_videoInitialized) _videoController.pause();
       }
 
       if (mounted) setState(() {});
@@ -193,12 +300,14 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
 
   // 타이머 리셋
   Future<void> _handleReset() async {
-    if (!mounted || !_videoInitialized) return;
+    if (!mounted) return;
 
     try {
       _timerController.resetTimer();
-      _videoController.pause();
-      _videoController.seekTo(Duration.zero);
+      if (_videoInitialized) {
+        _videoController.pause();
+        _videoController.seekTo(Duration.zero);
+      }
 
       if (mounted) setState(() {});
     } catch (e) {
@@ -210,6 +319,36 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: const Center(
+          child: CircularProgressIndicator(color: Colors.pink),
+        ),
+      );
+    }
+
+    if (_trainingSession == null) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text('훈련 데이터를 불러올 수 없습니다'),
+              const SizedBox(height: 16),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('돌아가기'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -234,8 +373,15 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
           icon: const Icon(Icons.arrow_back, color: Colors.white),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          if (_isOfflineMode)
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Icon(Icons.cloud_off, color: Colors.yellow),
+            ),
+        ],
       ),
-      body: SingleChildScrollView( // ScrollView로 감싸서 오버플로우 방지
+      body: SingleChildScrollView(
         child: Column(
           children: [
             // 쉬는 시간일 때는 비디오 대신 휴식 표시
@@ -286,48 +432,42 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
                   ],
                 ),
               )
-            else
-              if (_videoInitialized && _videoController.value.isInitialized)
-              // 비디오가 초기화되었고 준비된 경우
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: AspectRatio(
-                    aspectRatio: _videoController.value.aspectRatio,
-                    child: VideoPlayer(_videoController),
+            else if (_videoInitialized && _videoController.value.isInitialized)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: AspectRatio(
+                  aspectRatio: _videoController.value.aspectRatio,
+                  child: VideoPlayer(_videoController),
+                ),
+              )
+            else if (_isVideoError)
+                Container(
+                  width: double.infinity,
+                  height: 220,
+                  color: Colors.black,
+                  child: const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.red, size: 40),
+                        SizedBox(height: 8),
+                        Text(
+                          "비디오를 로드할 수 없습니다",
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ],
+                    ),
                   ),
                 )
               else
-                if (_isVideoError)
-                // 비디오 오류 발생 시 대체 UI
-                  Container(
-                    width: double.infinity,
-                    height: 220,
-                    color: Colors.black,
-                    child: const Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                              Icons.error_outline, color: Colors.red, size: 40),
-                          SizedBox(height: 8),
-                          Text(
-                            "비디오를 로드할 수 없습니다",
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                // 비디오 로딩 중 표시
-                  Container(
-                    width: double.infinity,
-                    height: 220,
-                    color: Colors.black,
-                    child: const Center(
-                      child: CircularProgressIndicator(color: Colors.white),
-                    ),
+                Container(
+                  width: double.infinity,
+                  height: 220,
+                  color: Colors.black,
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Colors.white),
                   ),
+                ),
 
             const SizedBox(height: 20),
 
@@ -340,8 +480,7 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
               ),
               child: Text(
                 _timerController.displayTitle,
-                style: const TextStyle(
-                    fontSize: 22, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
               ),
             ),
 
@@ -356,20 +495,15 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
               child: _timerController.isResting
                   ? Text(
                 "휴식",
-                style: const TextStyle(fontSize: 18,
+                style: const TextStyle(
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: Colors.white),
               )
                   : Text(
-                "${_timerController.currentCycleIndex + 1}/${_timerController
-                    .currentTrainingIndex < widget.trainingList.length
-                    ? widget.trainingList[_timerController.currentTrainingIndex]
-                    .count
-                    : 0} ${_timerController.currentTrainingIndex <
-                    widget.trainingList.length ? widget
-                    .trainingList[_timerController.currentTrainingIndex]
-                    .distance : 0}M",
-                style: const TextStyle(fontSize: 18,
+                "${_timerController.currentCycleIndex + 1}/${_timerController.currentTrainingIndex < _trainingSession!.trainings.length ? _trainingSession!.trainings[_timerController.currentTrainingIndex].count : 0} ${_timerController.currentTrainingIndex < _trainingSession!.trainings.length ? _trainingSession!.trainings[_timerController.currentTrainingIndex].distance : 0}M",
+                style: const TextStyle(
+                    fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: Colors.cyan),
               ),
@@ -384,7 +518,6 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
                 fontSize: 48,
                 fontWeight: FontWeight.bold,
                 color: Colors.red,
-                fontFamily: 'YourCustomFont', // 실제 폰트 지정 필요
               ),
             ),
 
@@ -412,7 +545,6 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
 
             const SizedBox(height: 20),
 
-            // 여기에 프로그레스 바 배치 (비디오 아래, 버튼 위)
             // 전체 진행 상황 프로그레스 바
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -424,16 +556,13 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
                     children: [
                       const Text(
                         "전체 진행 상황",
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.bold),
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                       ),
                       Text(
                         _timerController.isCompleted
                             ? "100%"
-                            : "${(_timerController.totalProgress * 100)
-                            .toInt()}%",
-                        style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.bold),
+                            : "${(_timerController.totalProgress * 100).toInt()}%",
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
@@ -464,13 +593,11 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
                     children: [
                       const Text(
                         "현재 진행",
-                        style: TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.bold),
+                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                       ),
                       Text(
                         "${(_timerController.currentProgress * 100).toInt()}%",
-                        style: const TextStyle(
-                            fontSize: 14, fontWeight: FontWeight.bold),
+                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                       ),
                     ],
                   ),
@@ -480,8 +607,7 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
                     child: LinearProgressIndicator(
                       value: _timerController.currentProgress,
                       backgroundColor: Colors.grey[300],
-                      color: _timerController.isResting ? Colors.blue : Colors
-                          .cyan,
+                      color: _timerController.isResting ? Colors.blue : Colors.cyan,
                       minHeight: 10,
                     ),
                   ),
@@ -493,8 +619,7 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
             if (_timerController.isCompleted)
               Container(
                 margin: const EdgeInsets.symmetric(vertical: 10),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 20, vertical: 10),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                 decoration: BoxDecoration(
                   color: Colors.green,
                   borderRadius: BorderRadius.circular(10),
@@ -502,10 +627,7 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
                 child: const Text(
                   "모든 훈련을 완료했습니다! 수고하셨습니다.",
                   style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold
-                  ),
+                      color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
 
@@ -519,8 +641,7 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
                   onPressed: _handleToggle,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 30, vertical: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 14),
                   ),
                   child: Text(
                     _timerController.timerButtonText,
@@ -532,8 +653,7 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
                   onPressed: _handleReset,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 30, vertical: 14),
+                    padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 14),
                   ),
                   child: const Text(
                     "초기화",
@@ -551,8 +671,7 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 40, vertical: 14),
+                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
                 shape: RoundedRectangleBorder(
                   side: const BorderSide(color: Colors.black, width: 2),
                   borderRadius: BorderRadius.circular(8),
