@@ -2,7 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'timer_screen.dart';
-import '../models/training_step.dart';
+import '../../swimming/models/training_step.dart';
 
 class TrainingLevelSelectionScreen extends StatefulWidget {
   const TrainingLevelSelectionScreen({Key? key}) : super(key: key);

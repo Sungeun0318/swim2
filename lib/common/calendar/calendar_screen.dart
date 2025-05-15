@@ -1,14 +1,18 @@
+// lib/common/calendar/calendar_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:table_calendar/table_calendar.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
-import 'training_item.dart';
-import 'exercise_graph_widget.dart';
-import 'dialog_training_input.dart';
-import 'dialog_delete.dart';
-import 'dialog_share.dart';
-import 'dialog_preschedule.dart';
-import 'fab_menu.dart';
+import 'package:swim/common/calendar/widgets/training_item.dart';
+import 'package:swim/common/calendar/widgets/exercise_graph_widget.dart';
+import 'package:swim/common/calendar/dialogs/dialog_training_input.dart';
+import 'package:swim/common/calendar/dialogs/dialog_delete.dart';
+import 'package:swim/common/calendar/dialogs/dialog_share.dart';
+import 'package:swim/common/calendar/dialogs/dialog_preschedule.dart';
+import 'package:swim/common/calendar/widgets/fab_menu.dart';
 
 class CalendarScreen extends StatefulWidget {
   const CalendarScreen({super.key});
@@ -18,26 +22,72 @@ class CalendarScreen extends StatefulWidget {
 }
 
 class _CalendarScreenState extends State<CalendarScreen> {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+
   bool _isFabExpanded = false;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   final Map<DateTime, List<TrainingItem>> _events = {};
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCalendarEvents();
+  }
+
+  // Firebase에서 캘린더 이벤트 로드
+  Future<void> _loadCalendarEvents() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        print('사용자가 로그인되지 않았습니다');
+        return;
+      }
+
+      final snapshot = await _firestore
+          .collection('calendar_events')
+          .where('userId', isEqualTo: user.uid)
+          .orderBy('date', descending: false) // 날짜 순으로 정렬
+          .get();
+
+      print('로드된 이벤트 수: ${snapshot.docs.length}');
+
+      setState(() {
+        _events.clear();
+        for (var doc in snapshot.docs) {
+          final data = doc.data();
+          final date = (data['date'] as Timestamp).toDate();
+          final dateKey = DateTime(date.year, date.month, date.day); // UTC 제거
+
+          final trainingItem = TrainingItem(
+            name: data['title'] ?? '훈련',
+            distance: '${data['totalDistance']}m',
+            time: data['totalTime'] ?? '',
+          );
+
+          _events[dateKey] ??= [];
+          _events[dateKey]!.add(trainingItem);
+          print('이벤트 추가: ${dateKey.toString()} - ${trainingItem.name}');
+        }
+      });
+    } catch (e) {
+      print('캘린더 이벤트 로드 실패: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
+  }
 
   void _handleFabAction(String action) {
     switch (action) {
       case "훈련 추가":
-        showTrainingInputDialog(context, _addTraining);
+        showTrainingInputDialog(context, _handleAddTraining);
         break;
       case "리스트 삭제":
-        final day = _selectedDay ?? _focusedDay;
-        final key = DateTime.utc(day.year, day.month, day.day);
-        final events = List<TrainingItem>.from(_events[key] ?? []);
-        showDeleteDialog(context, events, (selectedItems) {
-          setState(() {
-            _events[key]?.removeWhere((item) => selectedItems.contains(item));
-            if (_events[key]?.isEmpty ?? false) _events.remove(key);
-          });
-        });
+        _handleDeleteAction();
         break;
       case "캘린더 공유":
         showShareDialog(context);
@@ -81,7 +131,8 @@ class _CalendarScreenState extends State<CalendarScreen> {
     return _events[DateTime.utc(day.year, day.month, day.day)] ?? [];
   }
 
-  void _addTraining(TrainingItem training) {
+  // 훈련 추가 핸들러
+  void _handleAddTraining(TrainingItem training) {
     final dateKey = DateTime.utc(
       _selectedDay?.year ?? _focusedDay.year,
       _selectedDay?.month ?? _focusedDay.month,
@@ -94,8 +145,27 @@ class _CalendarScreenState extends State<CalendarScreen> {
     });
   }
 
+  // 삭제 액션 핸들러
+  void _handleDeleteAction() {
+    final day = _selectedDay ?? _focusedDay;
+    final key = DateTime.utc(day.year, day.month, day.day);
+    final events = List<TrainingItem>.from(_events[key] ?? []);
+    showDeleteDialog(context, events, (selectedItems) {
+      setState(() {
+        _events[key]?.removeWhere((item) => selectedItems.contains(item));
+        if (_events[key]?.isEmpty ?? false) _events.remove(key);
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(

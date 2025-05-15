@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'training_item.dart';
+import '../widgets/training_item.dart';
 
 typedef OnAddTraining = void Function(TrainingItem training);
 

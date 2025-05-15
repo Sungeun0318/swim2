@@ -1,5 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:swim/features/training/models/training_detail_data.dart';
+import 'package:swim/features/swimming/models/training_detail_data.dart';
 
 class TrainingSession {
   final String id;

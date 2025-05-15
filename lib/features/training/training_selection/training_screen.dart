@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:swim/features/swimming/swimming_main_screen.dart';
+import 'package:swim/features/swimming/screens/swimming_main_screen.dart';
 
 class TrainingScreen extends StatelessWidget {
   const TrainingScreen({Key? key}) : super(key: key);

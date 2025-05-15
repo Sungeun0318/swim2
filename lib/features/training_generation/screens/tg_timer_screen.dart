@@ -4,10 +4,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:video_player/video_player.dart';
-import 'package:swim/features/training/models/training_detail_data.dart'; // 이것만 사용
-import 'package:swim/features/training/models/training_session.dart';
+import 'package:swim/features/training_generation/models/training_session.dart';
+import 'package:swim/features/training_generation/screens/tg_result_screen.dart';
 import 'package:swim/repositories/training_repository.dart';
-import 'tg_timer_controller.dart';
+import '../controllers/tg_timer_controller.dart';
 
 class TGTimerScreen extends StatefulWidget {
   final String sessionId;
@@ -76,6 +76,9 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
       Navigator.pop(context);
     }
   }
+
+
+
 
   void _initializeComponents() {
     if (_trainingSession == null) return;
@@ -202,9 +205,6 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
     if (!_isOfflineMode) {
       try {
         await _trainingRepository.updateTrainingComplete(widget.sessionId);
-        if (kDebugMode) {
-          print("Firebase에 훈련 완료 상태 업데이트 성공");
-        }
       } catch (e) {
         if (kDebugMode) {
           print("Firebase 업데이트 실패: $e");
@@ -218,6 +218,40 @@ class _TGTimerScreenState extends State<TGTimerScreen> {
       _videoController.seekTo(Duration.zero);
     }
 
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            TGResultScreen(
+              sessionId: widget.sessionId,
+              session: _trainingSession!,
+              totalElapsedTime: _timerController.formattedElapsedTime,
+            ),
+      ),
+    );
+
+    ElevatedButton(
+      onPressed: () {
+        // 훈련이 완료된 경우 결과 화면으로, 아닌 경우 뒤로가기
+        if (_timerController.isCompleted) {
+          _completeTraining();
+        } else {
+          Navigator.pop(context);
+        }
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 14),
+        shape: RoundedRectangleBorder(
+          side: const BorderSide(color: Colors.black, width: 2),
+          borderRadius: BorderRadius.circular(8),
+        ),
+      ),
+      child: Text(
+        _timerController.isCompleted ? '결과 보기' : '훈련 종료',
+        style: const TextStyle(color: Colors.black, fontSize: 20),
+      ),
+    );
     // 완료 메시지 표시
     _showCompletionMessage();
   }

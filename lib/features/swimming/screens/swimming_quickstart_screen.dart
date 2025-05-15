@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import '/features/training/models/training_step.dart';
+import '../models/training_step.dart';
 import '/features/training/screens/timer_screen.dart';
-import '../../../common/widgets/distance_picker.dart';
+import '../../../../common/widgets/distance_picker.dart';
 
 class SwimmingQuickStartScreen extends StatefulWidget {
   final String level;

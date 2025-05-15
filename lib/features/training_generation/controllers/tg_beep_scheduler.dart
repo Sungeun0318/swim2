@@ -2,8 +2,8 @@
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import 'package:swim/features/training/models/training_detail_data.dart';
-import 'tg_sound_manager.dart';
+import 'package:swim/features/swimming/models/training_detail_data.dart';
+import '../services/tg_sound_manager.dart';
 
 
 class BeepScheduler {

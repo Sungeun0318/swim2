@@ -3,7 +3,7 @@
 import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
-import '../models/training_detail_data.dart';
+import '../../swimming/models/training_detail_data.dart';
 
 class TimerScreen extends StatefulWidget {
   final List<TrainingDetailData> trainingDetails;
@@ -51,6 +51,9 @@ class _TimerScreenState extends State<TimerScreen> {
     if (totalDuration <= 0) totalDuration = 1;
     remainingSeconds = totalDuration;
   }
+
+
+
 
   // 1초 간격으로 타이머를 진행합니다.
   void _startTimer() {

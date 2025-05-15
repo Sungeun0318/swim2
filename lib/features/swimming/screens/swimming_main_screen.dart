@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:swim/features/swimming/swimming_quickstart_level_selection_screen.dart';
-import 'package:swim/features/training_generation/tg_generation_screen.dart';
+import 'package:swim/features/swimming/screens/swimming_quickstart_level_selection_screen.dart';
+import 'package:swim/features/training_generation/screens/tg_generation_screen.dart';
 
 class SwimmingMainScreen extends StatelessWidget {
   const SwimmingMainScreen({Key? key}) : super(key: key);

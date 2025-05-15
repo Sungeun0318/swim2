@@ -1,7 +1,7 @@
 // lib/common/calendar/dialog_delete.dart
 
 import 'package:flutter/material.dart';
-import 'training_item.dart';
+import '../widgets/training_item.dart';
 
 typedef OnDeleteTraining = void Function(List<TrainingItem> selectedItems);
 

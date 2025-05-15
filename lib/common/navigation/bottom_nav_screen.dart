@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../features/training_selection/training_screen.dart';
+import '../../features/training/training_selection/training_screen.dart';
 import '../calendar/calendar_screen.dart';
 import '../notifications/notification_screen.dart';
-import '../community/community_screen.dart';
+import '../community/screens/community_screen.dart';
 import '../more/more_screen.dart';
 
 class BottomNavScreen extends StatefulWidget {

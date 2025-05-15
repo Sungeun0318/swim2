@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'common/navigation/bottom_nav_screen.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
-import 'package:swim/login/login_sc.dart';
-import 'package:swim/login/signgup_sc.dart';
+import 'package:swim/features/login/screens/login_sc.dart';
+import 'package:swim/features/login/screens/signgup_sc.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'login/profile_sc.dart';
-import 'login/search.dart';
-import 'package:swim/common/community/community_screen.dart'; // 추가
+import 'package:swim/features/login/screens/profile_sc.dart';
+import 'package:swim/features/login/widgets/search.dart';
+import 'package:swim/common/community/screens/community_screen.dart'; // 추가
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

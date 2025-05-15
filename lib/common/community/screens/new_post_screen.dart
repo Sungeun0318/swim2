@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:swim/models/community_post.dart';
+import 'package:swim/common/community/models/community_post.dart';
 
 class NewPostScreen extends StatefulWidget {
   const NewPostScreen({Key? key}) : super(key: key);

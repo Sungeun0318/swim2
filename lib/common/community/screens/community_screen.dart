@@ -1,15 +1,14 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:swim/models/community_post.dart';
-import 'package:swim/models/community_post_card.dart';
+import 'package:swim/common/community/models/community_post.dart';
+import 'package:swim/common/community/models/community_post_card.dart';
 import 'new_post_screen.dart';
-import 'post_detail_screen.dart';
 import 'followers_screen.dart';
 import 'search_screen.dart';
 import 'messages_screen.dart';
 import 'profile_screen.dart';
-import 'package:swim/models/stat_item.dart';
+
 
 class CommunityScreen extends StatefulWidget {
   const CommunityScreen({Key? key}) : super(key: key);

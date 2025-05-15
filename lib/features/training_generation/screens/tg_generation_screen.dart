@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:swim/features/training/models/training_detail_data.dart';
-import 'package:swim/features/training_generation/tg_generation_detail_screen.dart';
-import 'package:swim/features/training/models/training_session.dart';
+import 'package:swim/features/swimming/models/training_detail_data.dart';
+import 'package:swim/features/training_generation/screens/tg_generation_detail_screen.dart';
+import 'package:swim/features/training_generation/models/training_session.dart';
 import 'package:swim/repositories/training_repository.dart'; // 수정된 경로
 import 'tg_beep_settings_screen.dart';
 import 'tg_timer_screen.dart';

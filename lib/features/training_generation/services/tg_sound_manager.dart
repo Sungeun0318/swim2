@@ -5,12 +5,19 @@ import 'dart:async';
 
 class SoundManager {
   final AudioPlayer _audioPlayer = AudioPlayer();
-  bool _isPlaying = false;
+  bool _isPlaying = false; // 이 변수 사용하기
   Timer? _playingTimer;
 
   void playSound(String filePath, {double volume = 1.0}) {
     try {
-      // 플래그 초기화 타이머가 있으면 취소
+      // 이미 재생 중이면 중복 재생 방지
+      if (_isPlaying) {
+        if (kDebugMode) {
+          print("이미 소리 재생 중, 중복 재생 방지");
+        }
+        return;
+      }
+      _isPlaying = true; // 재생 상태로 설정
       _playingTimer?.cancel();
 
       if (kDebugMode) {
@@ -29,7 +36,7 @@ class SoundManager {
       // 타이머를 사용하여 더 긴 시간 후에 플래그 초기화
       // 끊김 방지를 위해 시간을 길게 설정
       _playingTimer = Timer(const Duration(milliseconds: 500), () {
-        _isPlaying = false;
+        _isPlaying = false; // 재생 완료 후 상태 초기화
       });
     } catch (e) {
       _isPlaying = false;

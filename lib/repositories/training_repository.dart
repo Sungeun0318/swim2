@@ -1,7 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:swim/features/training/models/training_session.dart';
+import 'package:swim/features/training_generation/models/training_session.dart';
 
 class TrainingRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -87,6 +87,35 @@ class TrainingRepository {
       if (kDebugMode) {
         print('진행 상태 업데이트 실패: $e');
       }
+    }
+  }
+  Future<void> addTrainingToCalendar(
+      String sessionId,
+      Map<String, dynamic> calendarData,
+      ) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) throw Exception('사용자가 로그인되지 않았습니다');
+
+      // calendar_events 컬렉션에 저장
+      await _firestore.collection('calendar_events').add({
+        'userId': user.uid,
+        'sessionId': sessionId,
+        'date': calendarData['date'],
+        'title': calendarData['title'],
+        'totalTime': calendarData['totalTime'],
+        'totalDistance': calendarData['totalDistance'],
+        'trainings': calendarData['trainings'],
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      // training_sessions의 캘린더 추가 상태 업데이트
+      await _firestore
+          .collection('training_sessions')
+          .doc(sessionId)
+          .update({'addedToCalendar': true});
+    } catch (e) {
+      throw Exception('캘린더 추가 실패: $e');
     }
   }
 }
