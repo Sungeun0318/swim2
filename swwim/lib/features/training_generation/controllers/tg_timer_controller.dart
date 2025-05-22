@@ -1,7 +1,6 @@
 // lib/features/training_generation/tg_timer_controller.dart
 
 import 'dart:async';
-// import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../services/tg_sound_manager.dart';
 import '../utils/tg_format_time.dart';
@@ -33,6 +32,7 @@ class TGTimerController {
   int _restTimeRemaining = 0;
   String _restMessage = "";
   bool _isCompleted = false;
+  bool _isFirstStart = true; // 첫 시작 여부 추가
 
   final SoundManager _soundManager = SoundManager();
   double? _lastTotalProgress; // 마지막으로 계산된 총 진행률
@@ -224,21 +224,35 @@ class TGTimerController {
     if (_isCompleted) return; // 완료 상태면 시작하지 않음
 
     _isResting = false;
-    _playBeep(); // 시작음
+
+    // 첫 번째 훈련의 첫 시작이 아닐 때만 비프음 재생
+    if (!_isFirstStart) {
+      _playBeep(); // 시작음
+    }
+
     // 시작 이벤트
     onEvent?.call("start");
 
-    Future.delayed(const Duration(milliseconds: 2750), () {
-      // 지연 시간 동안 상태가 변경됐을 수 있으므로 다시 확인
-      if (!_isRunning || _isPaused || _isCompleted) {
-        return;
-      }
-
+    // 첫 시작이면 바로 타이머 시작, 아니면 2.75초 후 시작
+    if (_isFirstStart) {
+      _isFirstStart = false; // 첫 시작 플래그 해제
       _startTime = DateTime.now();
       _scheduleBeeps(); // 비프 타이머 예약
       _startTimer();    // 타이머 시작
       onUpdate();
-    });
+    } else {
+      Future.delayed(const Duration(milliseconds: 2750), () {
+        // 지연 시간 동안 상태가 변경됐을 수 있으므로 다시 확인
+        if (!_isRunning || _isPaused || _isCompleted) {
+          return;
+        }
+
+        _startTime = DateTime.now();
+        _scheduleBeeps(); // 비프 타이머 예약
+        _startTimer();    // 타이머 시작
+        onUpdate();
+      });
+    }
   }
 
   // 쉬는 시간 시작
@@ -329,7 +343,7 @@ class TGTimerController {
           beepTimes.add(timeUntilBeep);
 
           if (kDebugMode) {
-            print("비프음 예약 - 사람: ${personIndex + 1}/${numPeople}, 싸이클: ${cycle + 1}/${totalCycles}, ${timeUntilBeep}ms 후");
+            print("비프음 예약 - 사람: ${personIndex + 1}/$numPeople, 싸이클: ${cycle + 1}/$totalCycles, ${timeUntilBeep}ms 후");
           }
         }
       }
@@ -560,6 +574,7 @@ class TGTimerController {
     _pausedDuration = Duration.zero;
     _restTimeRemaining = 0;
     _restMessage = "";
+    _isFirstStart = true; // 리셋 시 첫 시작 플래그 복구
 
     onUpdate();
     onEvent?.call("reset");

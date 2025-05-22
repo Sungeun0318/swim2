@@ -8,8 +8,6 @@ import 'package:swim/features/swimming/models/training_detail_data.dart';
 import 'package:swim/features/training_generation/models/training_session.dart';
 import 'package:swim/repositories/training_repository.dart';
 import 'package:audioplayers/audioplayers.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:swim/features/training_generation/controllers/tg_timer_controller.dart';
 import 'tg_result_screen.dart';
 
@@ -18,10 +16,10 @@ class TGTimerScreen extends StatefulWidget {
   final TrainingSession? fallbackData;
 
   const TGTimerScreen({
-    Key? key,
+    super.key, // Key? key를 super.key로 변경
     required this.sessionId,
     this.fallbackData,
-  }) : super(key: key);
+  });
 
   @override
   State<TGTimerScreen> createState() => _TGTimerScreenState();
@@ -40,11 +38,16 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
   bool _isLoading = true;
   bool _isOfflineMode = false;
 
-  // 추가: 카운트다운 관련 변수
+  // 카운트다운 관련 변수
   bool _isCountingDown = false;
   int _countdownValue = 5;
   late AnimationController _flashAnimationController;
   late Animation<Color?> _flashAnimation;
+  Timer? _countdownTimer;
+  bool _countdownBeepPlayed = false; // 카운트다운 중 비프음 재생 여부
+
+  // 오디오 플레이어 추가
+  final AudioPlayer _audioPlayer = AudioPlayer();
 
   @override
   void initState() {
@@ -63,7 +66,9 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
       end: Colors.red.withOpacity(0.3),
     ).animate(_flashAnimationController)
       ..addListener(() {
-        setState(() {});
+        if (mounted) { // mounted 체크 추가
+          setState(() {});
+        }
       })
       ..addStatusListener((status) {
         if (status == AnimationStatus.completed) {
@@ -81,19 +86,23 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
 
       if (session == null && widget.fallbackData != null) {
         // 오프라인 모드 (fallback 데이터 사용)
-        setState(() {
-          _trainingSession = widget.fallbackData;
-          _isOfflineMode = true;
-          _isLoading = false;
-        });
+        if (mounted) { // mounted 체크 추가
+          setState(() {
+            _trainingSession = widget.fallbackData;
+            _isOfflineMode = true;
+            _isLoading = false;
+          });
+        }
         if (kDebugMode) {
           print("오프라인 모드: Fallback 데이터 사용");
         }
       } else if (session != null) {
-        setState(() {
-          _trainingSession = session;
-          _isLoading = false;
-        });
+        if (mounted) { // mounted 체크 추가
+          setState(() {
+            _trainingSession = session;
+            _isLoading = false;
+          });
+        }
         if (kDebugMode) {
           print("Firebase에서 훈련 데이터 로드 성공");
         }
@@ -105,15 +114,15 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
       _initializeComponents();
 
     } catch (e) {
-      setState(() {
-        _isLoading = false;
-      });
-      if (mounted) {
+      if (mounted) { // mounted 체크 추가
+        setState(() {
+          _isLoading = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('데이터 로드 실패: $e')),
         );
+        Navigator.pop(context);
       }
-      Navigator.pop(context);
     }
   }
 
@@ -191,12 +200,10 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
     try {
       switch (action) {
         case "start":
-        // 훈련 시작 시 2.75초 후 비디오 재생
-          Future.delayed(const Duration(milliseconds: 2750), () {
-            if (mounted && !_timerController.isResting && _videoInitialized && _videoController.value.isInitialized) {
-              _videoController.play();
-            }
-          });
+        // 훈련 시작 시 바로 비디오 재생 (카운트다운에서 이미 2.75초 지연 처리됨)
+          if (mounted && !_timerController.isResting && _videoInitialized && _videoController.value.isInitialized) {
+            _videoController.play();
+          }
           break;
 
         case "rest_start":
@@ -308,8 +315,10 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
     if (_videoInitialized) {
       _videoController.dispose();
     }
+    _audioPlayer.dispose();
     _uiUpdateTimer?.cancel();
     _progressUpdateTimer?.cancel();
+    _countdownTimer?.cancel();
     super.dispose();
   }
 
@@ -351,40 +360,78 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
     }
   }
 
-  // 5초 카운트다운 메서드 (새로 추가, 소리 없음)
+  // 비프음 재생 메서드
+  Future<void> _playBeep() async {
+    try {
+      if (_trainingSession != null) {
+        String soundFile = _trainingSession!.beepSound.replaceFirst('assets/', '');
+        await _audioPlayer.play(AssetSource(soundFile));
+        if (kDebugMode) {
+          print("비프음 재생: $soundFile");
+        }
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print("비프음 재생 오류: $e");
+      }
+    }
+  }
+
+  // 개선된 5초 카운트다운 메서드
   void _startCountdown() {
     setState(() {
       _isCountingDown = true;
       _countdownValue = 5;
+      _countdownBeepPlayed = false;
     });
 
     // 깜빡임 애니메이션 시작
     _flashAnimationController.forward();
 
-    // 카운트다운 타이머
-    Timer.periodic(const Duration(seconds: 1), (timer) {
+    int elapsedSeconds = 0;
+
+    // 카운트다운 타이머 (100ms마다 체크)
+    _countdownTimer = Timer.periodic(const Duration(milliseconds: 100), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
 
-      setState(() {
-        _countdownValue--;
-      });
+      // 1초마다 카운트다운 업데이트
+      if (timer.tick % 10 == 0) { // 100ms * 10 = 1초
+        elapsedSeconds++;
+        setState(() {
+          _countdownValue = 5 - elapsedSeconds;
+        });
+      }
 
-      // 카운트다운 종료
-      if (_countdownValue <= 0) {
+      // 2.25초 지점에서 비프음 재생 (5초 - 2.75초 = 2.25초)
+      if (timer.tick == 22 && !_countdownBeepPlayed) { // 100ms * 22 = 2.2초 (약 2.25초)
+        _countdownBeepPlayed = true;
+        _playBeep();
+        if (kDebugMode) {
+          print("카운트다운 비프음 재생 (2.25초 지점)");
+        }
+      }
+
+      // 5초 완료 시 타이머 시작
+      if (elapsedSeconds >= 5) {
         timer.cancel();
         setState(() {
           _isCountingDown = false;
+          _countdownValue = 0;
         });
 
         // 깜빡임 중지
         _flashAnimationController.stop();
         _flashAnimationController.reset();
 
-        // 실제 타이머 시작
+        // 실제 타이머 시작 (추가 지연 없이 바로 시작)
         _timerController.startTraining();
+
+        if (kDebugMode) {
+          print("카운트다운 완료, 타이머 시작");
+        }
       }
     });
   }
@@ -394,6 +441,18 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
     if (!mounted) return;
 
     try {
+      // 카운트다운 중이면 카운트다운도 취소
+      if (_isCountingDown) {
+        _countdownTimer?.cancel();
+        setState(() {
+          _isCountingDown = false;
+          _countdownValue = 5;
+          _countdownBeepPlayed = false;
+        });
+        _flashAnimationController.stop();
+        _flashAnimationController.reset();
+      }
+
       _timerController.resetTimer();
       if (_videoInitialized && _videoController.value.isInitialized) {
         _videoController.pause();
@@ -411,9 +470,9 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return Scaffold(
+      return const Scaffold(
         backgroundColor: Colors.white,
-        body: const Center(
+        body: Center(
           child: CircularProgressIndicator(color: Colors.pink),
         ),
       );
@@ -462,8 +521,8 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
         ),
         actions: [
           if (_isOfflineMode)
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
+            const Padding(
+              padding: EdgeInsets.only(right: 16),
               child: Icon(Icons.cloud_off, color: Colors.yellow),
             ),
         ],
@@ -493,7 +552,7 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
           Container(
             width: 150,
             height: 150,
-            decoration: BoxDecoration(
+            decoration: const BoxDecoration(
               color: Colors.black,
               shape: BoxShape.circle,
             ),
@@ -639,9 +698,9 @@ class _TGTimerScreenState extends State<TGTimerScreen> with SingleTickerProvider
               borderRadius: BorderRadius.circular(8),
             ),
             child: _timerController.isResting
-                ? Text(
+                ? const Text(
               "휴식",
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
             )
                 : Text(
               "${_timerController.currentCycleIndex + 1}/${_timerController.currentTrainingIndex < _trainingSession!.trainings.length ? _trainingSession!.trainings[_timerController.currentTrainingIndex].count : 0} ${_timerController.currentTrainingIndex < _trainingSession!.trainings.length ? _trainingSession!.trainings[_timerController.currentTrainingIndex].distance : 0}M",

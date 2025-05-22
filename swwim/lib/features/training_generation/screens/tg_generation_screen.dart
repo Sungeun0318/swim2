@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:swim/features/swimming/models/training_detail_data.dart';
 import 'package:swim/features/training_generation/screens/tg_generation_detail_screen.dart';
 import 'package:swim/features/training_generation/models/training_session.dart';
-import 'package:swim/repositories/training_repository.dart'; // 수정된 경로
+import 'package:swim/repositories/training_repository.dart';
 import 'tg_beep_settings_screen.dart';
 import 'tg_timer_screen.dart';
 
@@ -11,7 +11,7 @@ class TGGenerationScreen extends StatefulWidget {
   const TGGenerationScreen({super.key});
 
   @override
-  _TGGenerationScreenState createState() => _TGGenerationScreenState();
+  State<TGGenerationScreen> createState() => _TGGenerationScreenState(); // createState 타입 수정
 }
 
 class _TGGenerationScreenState extends State<TGGenerationScreen> {
@@ -20,7 +20,7 @@ class _TGGenerationScreenState extends State<TGGenerationScreen> {
   int _numPeople = 1;
   int _totalDist = 0;
   int _totalTime = 0;
-  final TrainingRepository _trainingRepository = TrainingRepository(); // 변수 추가
+  final TrainingRepository _trainingRepository = TrainingRepository();
   bool _isLoading = false;
 
   @override
@@ -172,6 +172,7 @@ class _TGGenerationScreenState extends State<TGGenerationScreen> {
     });
 
     // BuildContext를 미리 저장
+    if (!mounted) return; // mounted 체크 추가
     final currentContext = context;
 
     try {
@@ -243,6 +244,34 @@ class _TGGenerationScreenState extends State<TGGenerationScreen> {
     }
   }
 
+  // 사이클 시간을 포맷하는 함수
+  String _formatCycle(int cycle) {
+    if (cycle < 60) {
+      return "$cycle초";
+    } else if (cycle < 3600) {
+      final minutes = cycle ~/ 60;
+      final seconds = cycle % 60;
+      if (seconds == 0) {
+        return "$minutes분";
+      } else {
+        return "$minutes분 $seconds초";
+      }
+    } else {
+      final hours = cycle ~/ 3600;
+      final remainingMinutes = (cycle % 3600) ~/ 60;
+      final remainingSeconds = cycle % 60;
+
+      String result = "$hours시간";
+      if (remainingMinutes > 0) {
+        result += " $remainingMinutes분";
+      }
+      if (remainingSeconds > 0) {
+        result += " $remainingSeconds초";
+      }
+      return result;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -272,14 +301,14 @@ class _TGGenerationScreenState extends State<TGGenerationScreen> {
                       children: [
                         // z_top_logo.png 이미지를 표시
                         Image.asset(
-                          'assets/images/z_top_logo.png',  // 실제 경로에 맞게 수정
-                          width: 120,                      // 원하는 크기
+                          'assets/images/z_top_logo.png',
+                          width: 120,
                           fit: BoxFit.contain,
                         ),
                         const SizedBox(height: 4),
-                        Row(
+                        const Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
+                          children: [
                             Icon(Icons.description, color: Colors.pink, size: 24),
                             SizedBox(width: 6),
                             Text(
@@ -366,7 +395,7 @@ class _TGGenerationScreenState extends State<TGGenerationScreen> {
 
                   // 음향 선택 (스피커 아이콘)
                   GestureDetector(
-                    onTap: _onBeepSettings, // 누르면 팝업
+                    onTap: _onBeepSettings,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                       color: Colors.black,
@@ -463,6 +492,4 @@ class _TGGenerationScreenState extends State<TGGenerationScreen> {
       ),
     );
   }
-
-  _formatCycle(int cycle) {}
 }
